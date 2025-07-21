@@ -89,12 +89,35 @@ def parse_atom(xml_data):
 
     return data
 
+
+def dedupe(filings, filing):
+    if filing is None:
+        # just return current state, no output
+        return (filings, None)
+
+    if filings is None:
+        filings = []
+
+    if filing['id'] in filings:
+        return (filings, None)
+    else:
+        filings.append(filing['id'])
+        return (filings, filing)
+
+
 if __name__ == '__main__':
     flow = Dataflow("edgar_scraper")
     filings_stream = op.input("in", flow, SECSource(timedelta(seconds=10)))
     processed_stream = op.flat_map("parse_atom", filings_stream, parse_atom)
     logged_stream = op.map("log_each", processed_stream, log_item)
     
+    deduped_stream = op.stateful_map("dedupe", processed_stream, dedupe)
+    op.inspect("dedupe_stream", deduped_stream)
+    deduped_filtered_stream = op.filter_map("remove_key", deduped_stream, lambda x: x[1])
+    op.inspect('filt', deduped_filtered_stream)
+    # cik_to_ticker = pd.read_json("company_tickers.json", orient="index")
+    # cik_to_ticker.set_index(cik_to_ticker["cik_str"], inplace=True)
+
     # Convert to JSON strings for file output
     serialized_stream = op.map("serialize", logged_stream, serialize_for_output)
     
